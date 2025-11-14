@@ -2,23 +2,30 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"flag"
 	"io"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"sync"
 	"time"
+
+	_ "net/http/pprof"
 
 	"github.com/axiomhq/hyperloglog"
 	"github.com/rs/zerolog"
 	slogzerolog "github.com/samber/slog-zerolog"
-	_ "net/http/pprof"
 )
 
 var filePath = flag.String("file", "nan", "a path to the file to be processed")
+
+func isValidIp(s []byte) bool {
+	ip := net.ParseIP(string(s))
+	return ip != nil && (ip.To4() != nil || ip.To16() != nil)
+}
 
 func processFile(filePath *string, rawIp chan [][]byte) error {
 	file, err := os.Open(*filePath)
@@ -30,7 +37,8 @@ func processFile(filePath *string, rawIp chan [][]byte) error {
 	// 1MB buffer minimize system calls
 	reader := bufio.NewReaderSize(file, 1<<20)
 	//s := cap(rawIp) / 8
-	batch := make([][]byte, 0, 64)
+	batch := make([][]byte, 0, 100)
+	cutSize := 0
 	for {
 		ip, err := reader.ReadBytes('\n')
 		if err == io.EOF {
@@ -39,7 +47,14 @@ func processFile(filePath *string, rawIp chan [][]byte) error {
 		if err != nil {
 			return err
 		}
-		batch = append(batch, bytes.TrimSpace(ip))
+		if ip[cap(ip)-1] == '\n' {
+			cutSize++
+		}
+		if ip[cap(ip)-2] == '\r' {
+			cutSize++
+		}
+		batch = append(batch, ip[:cap(ip)-cutSize])
+		cutSize = 0
 		if len(batch) == cap(batch) {
 			rawIp <- batch
 			batch = make([][]byte, 0, cap(batch))
@@ -60,7 +75,7 @@ func main() {
 	flag.Parse()
 
 	start := time.Now()
-	rawIp := make(chan [][]byte, 2024)
+	rawIp := make(chan [][]byte, 2048)
 	// read file line by line
 	// parallel reading brings complexity
 	go func() {
@@ -72,7 +87,7 @@ func main() {
 		}
 	}()
 	var wg sync.WaitGroup
-	goroutNum := 6
+	goroutNum := runtime.NumCPU() - 2
 	sketches := make([]*hyperloglog.Sketch, goroutNum)
 	for i := 0; i < goroutNum; i++ {
 		wg.Add(1)
@@ -81,6 +96,10 @@ func main() {
 			defer wg.Done()
 			for batch := range rawIp {
 				for _, ip := range batch {
+					if !isValidIp(ip) {
+						logger.Error("Invalid IP address", slog.Any("ip", ip))
+						continue
+					}
 					sketches[i].Insert(ip)
 				}
 			}

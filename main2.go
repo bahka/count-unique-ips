@@ -9,30 +9,31 @@ import (
 	"os"
 	"time"
 
-	"github.com/axiomhq/hyperloglog"
-	"github.com/rs/zerolog"
-	slogzerolog "github.com/samber/slog-zerolog"
 	"net/http"
 	_ "net/http/pprof"
+
+	"github.com/rs/zerolog"
+	slogzerolog "github.com/samber/slog-zerolog"
 )
+
+//func isValidIp(s []byte) bool {
+//	ip := net.ParseIP(string(s))
+//	return ip != nil && (ip.To4() != nil || ip.To16() != nil)
+//}
 
 func main() {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
-	zerolog := zerolog.New(os.Stdout).Level(zerolog.InfoLevel)
+	zlog := zerolog.New(os.Stdout).Level(zerolog.InfoLevel)
 	logger := slog.New(
-		slogzerolog.Option{Logger: &zerolog}.NewZerologHandler(),
+		slogzerolog.Option{Logger: &zlog}.NewZerologHandler(),
 	)
 
 	filePath := flag.String("file", "nan", "a path to the file to be processed")
-	//useHLL := flag.Bool("accuracy", false, "if true - we calculate with 100% accuracy, else - we estimate number of unique IPs")
 	flag.Parse()
 
 	start := time.Now()
-	//rawIp := make(chan []byte, 256)
-	// read file line by line
-	// parallel reading brings complexity
 	file, err := os.Open(*filePath)
 	if err != nil {
 		os.Exit(1)
@@ -41,12 +42,11 @@ func main() {
 
 	// 1MB buffer minimize system calls
 	reader := bufio.NewReaderSize(file, 1<<20)
-	sketch, err := hyperloglog.NewSketch(18, false)
+	//sketch, err := hyperloglog.NewSketch(18, false)
 	cutSize := 0
 	for {
 		ip, err := reader.ReadBytes('\n')
 		if err == io.EOF {
-			logger.Info("EOF", slog.Any("IP", ip))
 			break
 		}
 		if err != nil {
@@ -58,11 +58,16 @@ func main() {
 		if ip[cap(ip)-2] == '\r' {
 			cutSize++
 		}
-		sketch.Insert(ip[:cap(ip)-cutSize])
+		ip = ip[:len(ip)-cutSize]
+		if !isValidIp(ip) {
+			logger.Error("Invalid IP address", slog.Any("ip", ip))
+			continue
+		}
+		//sketch.Insert(ip)
 		cutSize = 0
 	}
 
-	logger.Info("DONE", slog.Any("count", sketch.Estimate()), slog.Any("elapsed", time.Since(start).Seconds()))
+	logger.Info("DONE", slog.Any("count", 1), slog.Any("elapsed", time.Since(start).Seconds()))
 }
 
 // 342 172 175
