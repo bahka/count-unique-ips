@@ -20,7 +20,7 @@ import (
 	slogzerolog "github.com/samber/slog-zerolog"
 )
 
-var filePath = flag.String("file", "nan", "a path to the file to be processed")
+//var filePath = flag.String("file", "nan", "a path to the file to be processed")
 
 func isValidIp(s []byte) bool {
 	ip := net.ParseIP(string(s))
@@ -37,7 +37,7 @@ func processFile(filePath *string, rawIp chan [][]byte) error {
 	// 1MB buffer minimize system calls
 	reader := bufio.NewReaderSize(file, 1<<20)
 	//s := cap(rawIp) / 8
-	batch := make([][]byte, 0, 100)
+	batch := make([][]byte, 0, 128)
 	cutSize := 0
 	for {
 		ip, err := reader.ReadBytes('\n')
@@ -63,7 +63,7 @@ func processFile(filePath *string, rawIp chan [][]byte) error {
 	}
 }
 
-func main() {
+func mainx() {
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
@@ -79,8 +79,9 @@ func main() {
 	// read file line by line
 	// parallel reading brings complexity
 	go func() {
+		f := "filePath"
 		defer close(rawIp)
-		err := processFile(filePath, rawIp)
+		err := processFile(&f, rawIp)
 		if err != nil {
 			logger.Error("error processing file", slog.Any("error", err))
 			os.Exit(1)

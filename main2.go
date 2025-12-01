@@ -2,18 +2,12 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"flag"
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"time"
-
-	"net/http"
-	_ "net/http/pprof"
-
-	"github.com/rs/zerolog"
-	slogzerolog "github.com/samber/slog-zerolog"
 )
 
 //func isValidIp(s []byte) bool {
@@ -21,14 +15,7 @@ import (
 //	return ip != nil && (ip.To4() != nil || ip.To16() != nil)
 //}
 
-func main() {
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
-	zlog := zerolog.New(os.Stdout).Level(zerolog.InfoLevel)
-	logger := slog.New(
-		slogzerolog.Option{Logger: &zlog}.NewZerologHandler(),
-	)
+func mainy() {
 
 	filePath := flag.String("file", "nan", "a path to the file to be processed")
 	flag.Parse()
@@ -52,22 +39,23 @@ func main() {
 		if err != nil {
 			os.Exit(1)
 		}
-		if ip[cap(ip)-1] == '\n' {
-			cutSize++
-		}
-		if ip[cap(ip)-2] == '\r' {
-			cutSize++
-		}
-		ip = ip[:len(ip)-cutSize]
+		//if ip[cap(ip)-1] == '\n' {
+		cutSize++
+		//}
+		//if ip[cap(ip)-2] == '\r' {
+		//	cutSize++
+		//}
+		//ip = ip[:len(ip)-cutSize]
+		ip = bytes.TrimSpace(ip)
 		if !isValidIp(ip) {
-			logger.Error("Invalid IP address", slog.Any("ip", ip))
+			slog.Error("Invalid IP address", slog.Any("ip", ip))
 			continue
 		}
 		//sketch.Insert(ip)
 		cutSize = 0
 	}
 
-	logger.Info("DONE", slog.Any("count", 1), slog.Any("elapsed", time.Since(start).Seconds()))
+	slog.Info("DONE", slog.Any("count", 1), slog.Any("elapsed", time.Since(start).Seconds()))
 }
 
 // 342 172 175
